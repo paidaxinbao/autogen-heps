@@ -1,6 +1,6 @@
 from dataclasses import dataclass
 import sys
-from typing import Dict, List, Optional, Union
+from typing import Callable, Dict, List, Optional, Union
 from .agent import Agent
 from .conversable_agent import ConversableAgent
 import logging
@@ -130,6 +130,8 @@ class GroupChatManager(ConversableAgent):
         max_consecutive_auto_reply: Optional[int] = sys.maxsize,
         human_input_mode: Optional[str] = "NEVER",
         system_message: Optional[str] = "Group chat manager.",
+        # seed: Optional[int] = 4,
+        is_termination_msg: Optional[Callable[[Dict], bool]] = None,
         **kwargs,
     ):
         super().__init__(
@@ -137,6 +139,7 @@ class GroupChatManager(ConversableAgent):
             max_consecutive_auto_reply=max_consecutive_auto_reply,
             human_input_mode=human_input_mode,
             system_message=system_message,
+            is_termination_msg=is_termination_msg,
             **kwargs,
         )
         # Order of register_reply is important.
@@ -185,8 +188,19 @@ class GroupChatManager(ConversableAgent):
                     raise
             if reply is None:
                 break
+
             # The speaker sends the message without requesting a reply
             speaker.send(reply, self, request_reply=False)
+
+            if (
+                isinstance(reply, dict)
+                and self._is_termination_msg(reply)
+                or isinstance(reply, str)
+                and self._is_termination_msg({"content": reply})
+            ):
+                groupchat.messages.append(reply)
+                break
+
             message = self.last_message(speaker)
         return True, None
 
@@ -232,5 +246,15 @@ class GroupChatManager(ConversableAgent):
                 break
             # The speaker sends the message without requesting a reply
             await speaker.a_send(reply, self, request_reply=False)
+
+            if (
+                isinstance(reply, dict)
+                and self._is_termination_msg(reply)
+                or isinstance(reply, str)
+                and self._is_termination_msg({"content": reply})
+            ):
+                groupchat.messages.append(reply)
+                break
+
             message = self.last_message(speaker)
         return True, None
