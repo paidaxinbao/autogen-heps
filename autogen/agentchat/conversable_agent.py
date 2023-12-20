@@ -1330,3 +1330,26 @@ class ConversableAgent(Agent):
     def function_map(self) -> Dict[str, Callable]:
         """Return the function map."""
         return self._function_map
+
+    def as_function_call_schema(self) -> Dict:
+        """
+        Return the function call schema for the agent.
+        """
+        return {
+            "name": self.name,
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "content": {
+                        "type": "string",
+                        "description": "The input message or task for the agent.",
+                    }
+                },
+                "required": ["content"],
+            },
+            "description": (
+                "This function establishes communication with a stateful agent, capable of contextual interaction and assistance. "
+                "It retains conversation history between the two of you, enhancing its responses and recommendations. "
+                f"Agent's function: {self.description}"
+            ),
+        }
