@@ -490,7 +490,7 @@ class ConversableAgent(Agent):
         self._process_received_message(message, sender, silent)
         if request_reply is False or request_reply is None and self.reply_at_receive[sender] is False:
             return
-        reply = self.generate_reply(messages=self.chat_messages[sender], sender=sender)
+        reply = self.generate_reply(messages=self.chat_messages[sender], sender=sender, silent=silent)
         if reply is not None:
             self.send(reply, sender, silent=silent)
 
@@ -526,7 +526,7 @@ class ConversableAgent(Agent):
         self._process_received_message(message, sender, silent)
         if request_reply is False or request_reply is None and self.reply_at_receive[sender] is False:
             return
-        reply = await self.a_generate_reply(sender=sender)
+        reply = await self.a_generate_reply(sender=sender, silent=silent)
         if reply is not None:
             await self.a_send(reply, sender, silent=silent)
 
@@ -775,6 +775,7 @@ class ConversableAgent(Agent):
         message = messages[-1]
         reply = ""
         no_human_input_msg = ""
+        exit_reason = "Terminated by human."  # the reason for conversation termination
         if self.human_input_mode == "ALWAYS":
             reply = self.get_human_input(
                 f"Provide feedback to {sender.name}. Press enter to skip and use auto-reply, or type 'exit' to end the conversation: "
@@ -786,6 +787,7 @@ class ConversableAgent(Agent):
             if self._consecutive_auto_reply_counter[sender] >= self._max_consecutive_auto_reply_dict[sender]:
                 if self.human_input_mode == "NEVER":
                     reply = "exit"
+                    exit_reason = "Exceeded maximum auto-reply count."
                 else:
                     # self.human_input_mode == "TERMINATE":
                     terminate = self._is_termination_msg(message)
@@ -800,6 +802,7 @@ class ConversableAgent(Agent):
             elif self._is_termination_msg(message):
                 if self.human_input_mode == "NEVER":
                     reply = "exit"
+                    exit_reason = "Last message matched termination condition."
                 else:
                     # self.human_input_mode == "TERMINATE":
                     reply = self.get_human_input(
@@ -817,6 +820,8 @@ class ConversableAgent(Agent):
         if reply == "exit":
             # reset the consecutive_auto_reply_counter
             self._consecutive_auto_reply_counter[sender] = 0
+            # tell user if the termination check matched
+            print(colored(f"Termination check of {self.name} matched: {exit_reason}", "red"))
             return True, None
 
         # send the human reply
@@ -924,6 +929,7 @@ class ConversableAgent(Agent):
         messages: Optional[List[Dict]] = None,
         sender: Optional[Agent] = None,
         exclude: Optional[List[Callable]] = None,
+        silent: Optional[bool] = False,
     ) -> Union[str, Dict, None]:
         """Reply based on the conversation history and the sender.
 
@@ -958,6 +964,7 @@ class ConversableAgent(Agent):
         if messages is None:
             messages = self._oai_messages[sender]
 
+        reply = self._default_auto_reply
         for reply_func_tuple in self._reply_func_list:
             reply_func = reply_func_tuple["reply_func"]
             if exclude and reply_func in exclude:
@@ -965,16 +972,27 @@ class ConversableAgent(Agent):
             if asyncio.coroutines.iscoroutinefunction(reply_func):
                 continue
             if self._match_trigger(reply_func_tuple["trigger"], sender):
-                final, reply = reply_func(self, messages=messages, sender=sender, config=reply_func_tuple["config"])
+                final, reply_from_func = reply_func(
+                    self, messages=messages, sender=sender, config=reply_func_tuple["config"]
+                )
                 if final:
-                    return reply
-        return self._default_auto_reply
+                    reply = reply_from_func
+                    break
+
+        # inform user about conversation termination
+        if reply is None and not silent:
+            print(
+                colored(f"{self.name} has chosen to end the conversation. Last speaker: {sender.name}", "red"),
+                "\n",
+            )
+        return reply
 
     async def a_generate_reply(
         self,
         messages: Optional[List[Dict]] = None,
         sender: Optional[Agent] = None,
         exclude: Optional[List[Callable]] = None,
+        silent: Optional[bool] = False,
     ) -> Union[str, Dict, None]:
         """(async) Reply based on the conversation history and the sender.
 
@@ -1009,20 +1027,31 @@ class ConversableAgent(Agent):
         if messages is None:
             messages = self._oai_messages[sender]
 
+        reply = self._default_auto_reply
         for reply_func_tuple in self._reply_func_list:
             reply_func = reply_func_tuple["reply_func"]
             if exclude and reply_func in exclude:
                 continue
             if self._match_trigger(reply_func_tuple["trigger"], sender):
                 if asyncio.coroutines.iscoroutinefunction(reply_func):
-                    final, reply = await reply_func(
+                    final, reply_from_func = await reply_func(
                         self, messages=messages, sender=sender, config=reply_func_tuple["config"]
                     )
                 else:
-                    final, reply = reply_func(self, messages=messages, sender=sender, config=reply_func_tuple["config"])
+                    final, reply_from_func = reply_func(
+                        self, messages=messages, sender=sender, config=reply_func_tuple["config"]
+                    )
                 if final:
-                    return reply
-        return self._default_auto_reply
+                    reply = reply_from_func
+                    break
+
+        # inform user about conversation termination
+        if reply is None and not silent:
+            print(
+                colored(f"{self.name} has chosen to end the conversation. Last speaker: {sender.name}", "red"),
+                "\n",
+            )
+        return reply
 
     def _match_trigger(self, trigger: Union[None, str, type, Agent, Callable, List], sender: Agent) -> bool:
         """Check if the sender matches the trigger.
