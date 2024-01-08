@@ -27,6 +27,7 @@ class TestLLaVAAgent(unittest.TestCase):
                 "timeout": 600,
                 "seed": 42,
                 "config_list": [{"model": "llava-fake", "base_url": "localhost:8000", "api_key": "Fake"}],
+                "model": "llava-fake",
             },
         )
 
