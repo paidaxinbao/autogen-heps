@@ -24,6 +24,7 @@ from ..code_utils import (
 from ..function_utils import get_function_schema, load_basemodels_if_needed, serialize_to_str
 from .agent import Agent
 from .._pydantic import model_dump
+from ..misc_utils import a_input
 
 try:
     from termcolor import colored
@@ -709,7 +710,7 @@ class ConversableAgent(Agent):
                 "message" needs to be provided if the `generate_init_message` method is not overridden.
         """
         self._prepare_chat(recipient, clear_history)
-        await self.a_send(self.generate_init_message(**context), recipient, silent=silent)
+        await self.a_send(await self.a_generate_init_message(**context), recipient, silent=silent)
 
     def reset(self):
         """Reset the agent."""
@@ -1376,7 +1377,7 @@ class ConversableAgent(Agent):
         Returns:
             str: human input.
         """
-        reply = input(prompt)
+        reply = await a_input(prompt)
         return reply
 
     def run_code(self, code, **kwargs):
@@ -1575,7 +1576,7 @@ class ConversableAgent(Agent):
             "content": str(content),
         }
 
-    def generate_init_message(self, **context) -> Union[str, Dict]:
+    def generate_init_message(self, **context) -> Union[str, Dict[str, Any]]:
         """Generate the initial message for the agent.
 
         Override this function to customize the initial message based on user's request.
@@ -1584,6 +1585,20 @@ class ConversableAgent(Agent):
         Args:
             **context: any context information, and "message" parameter needs to be provided.
         """
+        return context["message"]
+
+    async def a_generate_init_message(self, **context) -> Union[str, Dict[str, Any]]:
+        """Generate the initial message for the agent.
+
+        Override this function to customize the initial message based on user's request.
+        If not overridden, "message" needs to be provided in the context.
+
+        Args:
+            **context: any context information, and "message" parameter needs to be provided.
+                       If message is not given, prompt for it via input()
+        """
+        if "message" not in context:
+            context["message"] = await self.a_get_human_input(">")
         return context["message"]
 
     def register_function(self, function_map: Dict[str, Callable]):
