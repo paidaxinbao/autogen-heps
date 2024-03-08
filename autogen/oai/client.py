@@ -543,6 +543,7 @@ class OpenAIWrapper:
             raise ERROR
         invocation_id = str(uuid.uuid4())
         last = len(self._clients) - 1
+        use_cache = config.pop('use_cache', True)
         # Check if all configs in config list are activated
         non_activated = [
             client.config["model_client_cls"] for client in self._clients if isinstance(client, PlaceHolderClient)
@@ -571,12 +572,13 @@ class OpenAIWrapper:
             actual_usage = None
 
             cache_client = None
-            if cache is not None:
-                # Use the cache object if provided.
-                cache_client = cache
-            elif cache_seed is not None:
-                # Legacy cache behavior, if cache_seed is given, use DiskCache.
-                cache_client = Cache.disk(cache_seed, LEGACY_CACHE_DIR)
+            if use_cache:
+                if cache is not None:
+                    # Use the cache object if provided.
+                    cache_client = cache
+                elif cache_seed is not None:
+                    # Legacy cache behavior, if cache_seed is given, use DiskCache.
+                    cache_client = Cache.disk(cache_seed, LEGACY_CACHE_DIR)
 
             if cache_client is not None:
                 with cache_client as cache:

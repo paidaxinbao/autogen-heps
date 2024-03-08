@@ -576,6 +576,7 @@ class ConversableAgent(LLMAgent):
         recipient: Agent,
         request_reply: Optional[bool] = None,
         silent: Optional[bool] = False,
+        use_cache: bool = True,
     ) -> ChatResult:
         """Send a message to another agent.
 
@@ -617,7 +618,7 @@ class ConversableAgent(LLMAgent):
         # unless it's "function".
         valid = self._append_oai_message(message, "assistant", recipient)
         if valid:
-            recipient.receive(message, self, request_reply, silent)
+            recipient.receive(message, self, request_reply, silent, use_cache=use_cache)
         else:
             raise ValueError(
                 "Message can't be converted into a valid ChatCompletion message. Either content or function_call must be provided."
@@ -752,6 +753,7 @@ class ConversableAgent(LLMAgent):
         sender: Agent,
         request_reply: Optional[bool] = None,
         silent: Optional[bool] = False,
+        use_cache: bool = True,
     ):
         """Receive a message from another agent.
 
@@ -779,7 +781,7 @@ class ConversableAgent(LLMAgent):
         self._process_received_message(message, sender, silent)
         if request_reply is False or request_reply is None and self.reply_at_receive[sender] is False:
             return
-        reply = self.generate_reply(messages=self.chat_messages[sender], sender=sender)
+        reply = self.generate_reply(messages=self.chat_messages[sender], sender=sender, use_cache=use_cache)
         if reply is not None:
             self.send(reply, sender, silent=silent)
 
@@ -1171,6 +1173,7 @@ class ConversableAgent(LLMAgent):
         messages: Optional[List[Dict]] = None,
         sender: Optional[Agent] = None,
         config: Optional[OpenAIWrapper] = None,
+        use_cache = True,
     ) -> Tuple[bool, Union[str, Dict, None]]:
         """Generate a reply using autogen.oai."""
         client = self.client if config is None else config
@@ -1179,11 +1182,11 @@ class ConversableAgent(LLMAgent):
         if messages is None:
             messages = self._oai_messages[sender]
         extracted_response = self._generate_oai_reply_from_client(
-            client, self._oai_system_message + messages, self.client_cache
+            client, self._oai_system_message + messages, self.client_cache, use_cache
         )
         return (False, None) if extracted_response is None else (True, extracted_response)
 
-    def _generate_oai_reply_from_client(self, llm_client, messages, cache) -> Union[str, Dict, None]:
+    def _generate_oai_reply_from_client(self, llm_client, messages, cache, use_cache) -> Union[str, Dict, None]:
         # unroll tool_responses
         all_messages = []
         for message in messages:
@@ -1201,6 +1204,7 @@ class ConversableAgent(LLMAgent):
             context=messages[-1].pop("context", None),
             messages=all_messages,
             cache=cache,
+            use_cache=use_cache,
         )
         extracted_response = llm_client.extract_text_or_completion_object(response)[0]
 
@@ -1224,6 +1228,7 @@ class ConversableAgent(LLMAgent):
         messages: Optional[List[Dict]] = None,
         sender: Optional[Agent] = None,
         config: Optional[Any] = None,
+        use_cache = True,
     ) -> Tuple[bool, Union[str, Dict, None]]:
         """Generate a reply using autogen.oai asynchronously."""
         return await asyncio.get_event_loop().run_in_executor(
@@ -1235,6 +1240,7 @@ class ConversableAgent(LLMAgent):
         messages: Optional[List[Dict]] = None,
         sender: Optional[Agent] = None,
         config: Optional[Union[Dict, Literal[False]]] = None,
+        use_cache = True,
     ):
         """Generate a reply using code executor."""
         if config is not None:
@@ -1302,6 +1308,7 @@ class ConversableAgent(LLMAgent):
         messages: Optional[List[Dict]] = None,
         sender: Optional[Agent] = None,
         config: Optional[Union[Dict, Literal[False]]] = None,
+        use_cache = True,
     ):
         """Generate a reply using code execution."""
         code_execution_config = config if config is not None else self._code_execution_config
@@ -1354,6 +1361,7 @@ class ConversableAgent(LLMAgent):
         messages: Optional[List[Dict]] = None,
         sender: Optional[Agent] = None,
         config: Optional[Any] = None,
+        use_cache = True,
     ) -> Tuple[bool, Union[Dict, None]]:
         """
         Generate a reply using function call.
@@ -1392,6 +1400,7 @@ class ConversableAgent(LLMAgent):
         messages: Optional[List[Dict]] = None,
         sender: Optional[Agent] = None,
         config: Optional[Any] = None,
+        use_cache = True,
     ) -> Tuple[bool, Union[Dict, None]]:
         """
         Generate a reply using async function call.
@@ -1424,6 +1433,7 @@ class ConversableAgent(LLMAgent):
         messages: Optional[List[Dict]] = None,
         sender: Optional[Agent] = None,
         config: Optional[Any] = None,
+        use_cache = True,
     ) -> Tuple[bool, Union[Dict, None]]:
         """Generate a reply using tool call."""
         if config is None:
@@ -1481,6 +1491,7 @@ class ConversableAgent(LLMAgent):
         messages: Optional[List[Dict]] = None,
         sender: Optional[Agent] = None,
         config: Optional[Any] = None,
+        use_cache = True,
     ) -> Tuple[bool, Union[Dict, None]]:
         """Generate a reply using async function call."""
         if config is None:
@@ -1506,6 +1517,7 @@ class ConversableAgent(LLMAgent):
         messages: Optional[List[Dict]] = None,
         sender: Optional[Agent] = None,
         config: Optional[Any] = None,
+        use_cache = True,
     ) -> Tuple[bool, Union[str, None]]:
         """Check if the conversation should be terminated, and if human reply is provided.
 
@@ -1619,6 +1631,7 @@ class ConversableAgent(LLMAgent):
         messages: Optional[List[Dict]] = None,
         sender: Optional[Agent] = None,
         config: Optional[Any] = None,
+        use_cache = True,
     ) -> Tuple[bool, Union[str, None]]:
         """(async) Check if the conversation should be terminated, and if human reply is provided.
 
@@ -1774,6 +1787,7 @@ class ConversableAgent(LLMAgent):
         # Message modifications do not affect the incoming messages or self._oai_messages.
         messages = self.process_all_messages_before_reply(messages)
 
+        use_cache = kwargs.get("use_cache", True)
         for reply_func_tuple in self._reply_func_list:
             reply_func = reply_func_tuple["reply_func"]
             if "exclude" in kwargs and reply_func in kwargs["exclude"]:
@@ -1781,7 +1795,7 @@ class ConversableAgent(LLMAgent):
             if inspect.iscoroutinefunction(reply_func):
                 continue
             if self._match_trigger(reply_func_tuple["trigger"], sender):
-                final, reply = reply_func(self, messages=messages, sender=sender, config=reply_func_tuple["config"])
+                final, reply = reply_func(self, messages=messages, sender=sender, config=reply_func_tuple["config"], use_cache=use_cache)
                 if final:
                     return reply
         return self._default_auto_reply
