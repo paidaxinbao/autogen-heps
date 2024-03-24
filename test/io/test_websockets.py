@@ -155,8 +155,9 @@ class TestConsoleIOWithWebsockets:
                 print(f" - Connected to server on {uri}", flush=True)
 
                 print(" - Sending message to server.", flush=True)
-                # websocket.send("2+2=?")
-                websocket.send("Please write a poem about spring in a city of your choice.")
+                websocket.send(
+                    "Check out the weather in Paris and write a poem about Paris taking the weather into consideration."
+                )
 
                 while True:
                     message = websocket.recv()
