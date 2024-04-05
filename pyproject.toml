@@ -72,7 +72,9 @@ files = [
     "autogen/_pydantic.py",
     "autogen/function_utils.py",
     "autogen/io",
+    "autogen/persistence",
     "test/io",
+    "test/persistence",
 ]
 
 exclude = [
