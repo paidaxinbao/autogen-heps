@@ -16,6 +16,8 @@ from autogen.oai.openai_utils import OAI_PRICE1K, get_key, is_valid_api_key
 from autogen.runtime_logging import log_chat_completion, log_new_client, log_new_wrapper, logging_enabled
 from autogen.token_count_utils import count_token
 
+from .rate_limiters import TimeRateLimiter
+
 TOOL_ENABLED = False
 try:
     import openai
@@ -165,7 +167,9 @@ class OpenAIClient:
         """
         iostream = IOStream.get_default()
 
-        completions: Completions = self._oai_client.chat.completions if "messages" in params else self._oai_client.completions  # type: ignore [attr-defined]
+        completions: Completions = (
+            self._oai_client.chat.completions if "messages" in params else self._oai_client.completions
+        )  # type: ignore [attr-defined]
         # If streaming is enabled and has messages, then iterate over the chunks of the response.
         if params.get("stream", False) and "messages" in params:
             response_contents = [""] * params.get("n", 1)
@@ -376,10 +380,18 @@ class OpenAIWrapper:
 
         self._clients: List[ModelClient] = []
         self._config_list: List[Dict[str, Any]] = []
+        self._rate_limiters: List[Optional[TimeRateLimiter]] = []
 
         if config_list:
             config_list = [config.copy() for config in config_list]  # make a copy before modifying
             for config in config_list:
+                # Instantiate the rate limiter
+                if "api_rate_limit" in config:
+                    self._rate_limiters.append(TimeRateLimiter(config["api_rate_limit"]))
+                    del config["api_rate_limit"]
+                else:
+                    self._rate_limiters.append(None)
+
                 self._register_default_client(config, openai_config)  # could modify the config
                 self._config_list.append(
                     {**extra_kwargs, **{k: v for k, v in config.items() if k not in self.openai_kwargs}}
@@ -634,6 +646,7 @@ class OpenAIWrapper:
                             return response
                         continue  # filter is not passed; try the next config
             try:
+                self._throttle_api_calls(i)
                 request_ts = get_current_ts()
                 response = client.create(params)
             except APITimeoutError as err:
@@ -911,3 +924,11 @@ class OpenAIWrapper:
             A list of text, or a list of ChatCompletion objects if function_call/tool_calls are present.
         """
         return response.message_retrieval_function(response)
+
+    def _throttle_api_calls(self, idx: int) -> None:
+        """Rate limit api calls."""
+        if self._rate_limiters[idx]:
+            limiter = self._rate_limiters[idx]
+
+            assert limiter is not None
+            limiter.wait()
